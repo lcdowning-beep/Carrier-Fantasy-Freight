@@ -203,7 +203,7 @@ function rLogin(){
     all.map(function(m){return '<option value="'+m+'">'+m+(m==='ADMIN'?' (admin)':'')+'</option>';}).join('')+
     '</select>'+
     '<div class="login-continue"><button class="btn" id="lb2">Continue</button></div>'+
-    '<div class="login-hint">Need a roster change after submission? Contact JLALAMA or ATUCKER.</div>'+
+    '<div class="login-hint">Need a roster change after submission? Contact LCDOWNING or FSHIMP.</div>'+
     '</div></div></div>';
   document.getElementById('lb2').onclick=function(){
     var v=document.getElementById('ls').value;if(!v)return;
@@ -332,7 +332,7 @@ async function rMgr(){
 
   document.getElementById('mc').innerHTML=
     '<div class="matchup">'+(opp?'<b>Week '+wk+'</b> &middot; vs <b>'+opp.opponent+'</b>'+(opp.division&&opp.division.indexOf('RIVALRY')>=0?' <span class="vs">&#9876; RIVALRY</span>':''):'<b>Week '+wk+'</b>')+'</div>'+
-    (weekLocked?'<div class="notice bad">&#128274; Week '+wk+' has been locked by admin. Contact JLALAMA or ATUCKER for changes.</div>':
+    (weekLocked?'<div class="notice bad">&#128274; Week '+wk+' has been locked by admin. Contact LCDOWNING or FSHIMP for changes.</div>':
       '<div class="notice warn">&#9888; Make sure your selections are final before saving &mdash; changes are allowed until the admin locks the week.</div>')+
     (isSmall?'<div class="notice info">&#127919; Small roster exception: the no-repeat rule is waived for your team.</div>':'')+
     (!isSmall&&lockedReps.size>0&&!weekLocked?'<div class="notice dim">Grayed-out reps played Week '+(wk-1)+' and cannot be re-selected.</div>':'')+
