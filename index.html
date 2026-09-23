@@ -23,7 +23,8 @@ body{margin:0;background:var(--bg);color:var(--text);font-family:'Inter',sans-se
 .btn.sm{padding:5px 11px;font-size:12px;border-radius:6px;}
 .btn.lock{background:#1a2535;color:var(--warn);border:1px solid var(--warn);padding:4px 8px;font-size:11px;border-radius:5px;}
 .btn.lock:hover{background:var(--warn);color:#1a1206;}
-.btn.locked-state{background:var(--goodbg);color:var(--good);border:1px solid var(--good);padding:4px 8px;font-size:11px;border-radius:5px;cursor:default;}
+.btn.locked-state{background:var(--goodbg);color:var(--good);border:1px solid var(--good);padding:4px 8px;font-size:11px;border-radius:5px;cursor:pointer;}
+.btn.locked-state:hover{background:var(--good);color:#0a1a0f;}
 select,input{font-family:'JetBrains Mono',monospace;font-size:14px;background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:8px;padding:9px 11px;width:100%;}
 label{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:5px;}
 .row{display:flex;gap:10px;align-items:flex-end;margin-top:12px;}
@@ -477,19 +478,22 @@ async function rAdmin(){
   document.getElementById('ref').onclick=function(){state.cache={};state.locks={};rAdmin();};
 
   // Bind lock buttons
-  for(var ww=1;ww<=TOTAL_WEEKS;ww++){
-    (function(w){
-      var btn=document.getElementById('lkbtn'+w);
-      if(btn&&!isWeekLocked(w)){
-        btn.onclick=async function(){
-          btn.disabled=true;btn.textContent='...';
-          var ok=await setLock(w,true);
-          if(ok){state.cache={};rAdmin();}
-          else{btn.disabled=false;btn.innerHTML='&#128274; WK'+w;}
-        };
-      }
-    })(ww);
-  }
+for(var ww=1;ww<=TOTAL_WEEKS;ww++){
+  (function(w){
+    var btn=document.getElementById('lkbtn'+w);
+    if(btn){
+      btn.onclick=async function(){
+        var currentlyLocked=isWeekLocked(w);
+        var action=currentlyLocked?'unlock':'lock';
+        if(!confirm('Are you sure you want to '+action+' Week '+w+'?'))return;
+        btn.disabled=true;btn.textContent='...';
+        var ok=await setLock(w,!currentlyLocked);
+        if(ok){state.cache={};rAdmin();}
+        else{btn.disabled=false;btn.innerHTML=(currentlyLocked?'&#10003;':'&#128274;')+' WK'+w;}
+      };
+    }
+  })(ww);
+}
 
   var pendingPerWeek={};
   for(var w=1;w<=TOTAL_WEEKS;w++)pendingPerWeek[w]=[];
