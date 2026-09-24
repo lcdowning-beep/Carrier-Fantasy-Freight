@@ -257,7 +257,7 @@ function rPin(){
 function lbtn(){return '<button class="btn ghost sm" id="lob">Switch user</button>';}
 function bndL(){
   var b=document.getElementById('lob');
-  if(b)b.onclick=function(){state.user=null;state.admin=false;state.pending=null;state.init=false;state.tries=0;state.cache={};state.locks={};render();};
+  if(b)b.onclick=function(){state.user=null;state.admin=false;state.pending=null;state.init=false;state.tries=0;state.cache={};state.locks={};state.pendWeek=null;render();};
 }
 function brandHtml(sub){
   return '<div class="brand"><img src="'+LOGO+'" alt="FF"/><div><h1>Carrier Fantasy Freight 2026</h1><div class="sub">'+sub+'</div></div></div>';
@@ -477,23 +477,23 @@ async function rAdmin(){
   bndL();
   document.getElementById('ref').onclick=function(){state.cache={};state.locks={};rAdmin();};
 
-  // Bind lock buttons
-for(var ww=1;ww<=TOTAL_WEEKS;ww++){
-  (function(w){
-    var btn=document.getElementById('lkbtn'+w);
-    if(btn){
-      btn.onclick=async function(){
-        var currentlyLocked=isWeekLocked(w);
-        var action=currentlyLocked?'unlock':'lock';
-        if(!confirm('Are you sure you want to '+action+' Week '+w+'?'))return;
-        btn.disabled=true;btn.textContent='...';
-        var ok=await setLock(w,!currentlyLocked);
-        if(ok){state.cache={};rAdmin();}
-        else{btn.disabled=false;btn.innerHTML=(currentlyLocked?'&#10003;':'&#128274;')+' WK'+w;}
-      };
-    }
-  })(ww);
-}
+  // Bind lock buttons (toggle both directions)
+  for(var ww=1;ww<=TOTAL_WEEKS;ww++){
+    (function(w){
+      var btn=document.getElementById('lkbtn'+w);
+      if(btn){
+        btn.onclick=async function(){
+          var currentlyLocked=isWeekLocked(w);
+          var action=currentlyLocked?'unlock':'lock';
+          if(!confirm('Are you sure you want to '+action+' Week '+w+'?'))return;
+          btn.disabled=true;btn.textContent='...';
+          var ok=await setLock(w,!currentlyLocked);
+          if(ok){state.cache={};rAdmin();}
+          else{btn.disabled=false;btn.innerHTML=(currentlyLocked?'&#10003;':'&#128274;')+' WK'+w;}
+        };
+      }
+    })(ww);
+  }
 
   var pendingPerWeek={};
   for(var w=1;w<=TOTAL_WEEKS;w++)pendingPerWeek[w]=[];
@@ -511,12 +511,21 @@ for(var ww=1;ww<=TOTAL_WEEKS;ww++){
   }
   document.getElementById('gb').innerHTML=rh;
 
-  var cp=pendingPerWeek[CW]||[];
+  var cp=pendingPerWeek[state.pendWeek||CW]||[];
+  var pw=state.pendWeek||CW;
   document.getElementById('pend').innerHTML=
-    '<label>Pending &mdash; Week '+CW+' (current week, starts '+new Date(SEASON_START.getTime()+(CW-1)*7*86400000).toLocaleDateString()+')</label>'+
+    '<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;">'+
+    '<label style="margin-bottom:0;">Pending &mdash; Week '+pw+(pw===CW?' (current week)':'')+
+    ', starts '+new Date(SEASON_START.getTime()+(pw-1)*7*86400000).toLocaleDateString()+'</label>'+
+    '<select id="pwsel" class="btn ghost sm" style="padding:4px 8px;">'+
+    Array.from({length:TOTAL_WEEKS},function(_,i){var ww=i+1;return '<option value="'+ww+'" '+(ww===pw?'selected':'')+'>Week '+ww+(ww===CW?' (current)':'')+'</option>';}).join('')+
+    '</select></div>'+
     (cp.length===0
-      ?'<div class="hint" style="color:var(--good);">&#10003; All rosters submitted for Week '+CW+'!</div>'
+      ?'<div class="hint" style="color:var(--good);">&#10003; All rosters submitted for Week '+pw+'!</div>'
       :'<div class="pills">'+cp.map(function(m){return '<span class="pill">'+m+'</span>';}).join('')+'</div>');
+
+  var pwsel=document.getElementById('pwsel');
+  if(pwsel)pwsel.onchange=function(){state.pendWeek=parseInt(pwsel.value,10);rAdmin();};
 
   document.querySelectorAll('.cell').forEach(function(c){
     c.onclick=async function(){
