@@ -119,7 +119,10 @@ var MPH={"AWEST":"c66f1f34f49381e467d3abd43c77947f5d1dd362fd0eec6c2c1f27233ae9ad
 var REQUIRED_PICKS=11;
 // Reps who leave mid-season: rep -> first week they are no longer selectable.
 // They remain fully eligible for every week before that number.
-var EXIT={"ZFOSTER":3,"DSHANNONIII":3,"NJLAPHAM":3};
+// This is just a seed for existing exits set before the admin tool existed;
+// the admin panel's Rep Exits section manages this from here on and persists
+// to the backend (state.exits), which takes precedence on any overlap.
+var DEFAULT_EXIT={"ZFOSTER":3,"DSHANNONIII":3};
 var TOTAL_WEEKS=6;
 var SEASON_START=new Date('2026-09-21T00:00:00');
 var API_URL='https://script.google.com/macros/s/AKfycbySTPZkPLajR0YsDJF_nmgsg1KTgBMt-nrdJNIar70UkcG6R7BFM7T-U3sk-9mFg57L/exec';
@@ -133,7 +136,7 @@ function getCW(){
   return Math.min(Math.max(Math.floor(d/7)+1,1),TOTAL_WEEKS);
 }
 var CW=getCW();
-var state={user:null,admin:false,pending:null,week:CW,sel:new Set(),init:false,initWk:null,tries:0,cache:{},locks:{}};
+var state={user:null,admin:false,pending:null,week:CW,sel:new Set(),init:false,initWk:null,tries:0,cache:{},locks:{},exits:Object.assign({},DEFAULT_EXIT)};
 var app=document.getElementById('app');
 
 async function h256(s){
@@ -185,6 +188,27 @@ async function setLock(wk,locked){
 }
 
 function isWeekLocked(wk){return state.locks[String(wk)]===true;}
+
+async function getExits(){
+  try{
+    var r=await api({action:'getExits'});
+    return r.success?Object.assign({},DEFAULT_EXIT,r.exits):Object.assign({},DEFAULT_EXIT);
+  }catch(e){return Object.assign({},DEFAULT_EXIT);}
+}
+async function setExit(rep,week){
+  try{
+    var r=await api({action:'setExit',rep:rep,week:week});
+    if(r.success){state.exits[rep]=week;return true;}
+    return false;
+  }catch(e){return false;}
+}
+async function removeExit(rep){
+  try{
+    var r=await api({action:'removeExit',rep:rep});
+    if(r.success){delete state.exits[rep];return true;}
+    return false;
+  }catch(e){return false;}
+}
 
 async function render(){
   if(!state.user&&!state.pending){rLogin();return;}
@@ -245,6 +269,7 @@ function rPin(){
       // Show loading immediately so user knows PIN was accepted
       app.innerHTML='<div class="lw"><div class="lb"><div class="ll"><img src="'+LOGO+'" alt="FF" style="width:80px;height:80px;"/><h1 style="font-family:Oswald,sans-serif;font-size:20px;text-transform:uppercase;margin:12px 0 4px;">Loading...</h1><div class="sub" style="color:var(--dim);">Fetching your roster data</div></div></div></div>';
       state.locks=await getLocks();
+      state.exits=await getExits();
       render();
     } else {
       state.tries++;
@@ -310,7 +335,7 @@ function fairEligible(reps,histCount,selSet){
 /* ---- MANAGER ---- */
 async function rMgr(){
   var mgr=state.user,wk=state.week;
-  var reps=(RBM[mgr]||[]).filter(function(r){return !(EXIT[r]&&wk>=EXIT[r]);});
+  var reps=(RBM[mgr]||[]).filter(function(r){return !(state.exits[r]&&wk>=state.exits[r]);});
   var weekLocked=isWeekLocked(wk);
   // Preload all rosters into cache in one batch call if not already loaded
   var cacheKeys=Object.keys(state.cache).filter(function(k){return k.indexOf(mgr+':')===0;});
@@ -442,10 +467,11 @@ function setST(s){
 
 /* ---- ADMIN ---- */
 async function rAdmin(){
-  // Fetch locks and all rosters in parallel
-  var parallel=await Promise.all([getLocks(),allR()]);
+  // Fetch locks, exits, and all rosters in parallel
+  var parallel=await Promise.all([getLocks(),getExits(),allR()]);
   state.locks=parallel[0];
-  var arPreloaded=parallel[1];
+  state.exits=parallel[1];
+  var arPreloaded=parallel[2];
   // Pre-populate cache
   for(var mi2=0;mi2<MGR.length;mi2++){
     var mg2=MGR[mi2];
@@ -463,6 +489,22 @@ async function rAdmin(){
     '<button class="btn ghost sm" id="exp">Export CSV</button>'+
     '</div>'+
     '<div class="card" id="pend"><div class="hint">Loading...</div></div>'+
+    '<div class="card" id="exitsCard">'+
+    '<label style="margin-bottom:8px;">Rep Exits</label>'+
+    '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">'+
+    '<select id="exitRepSel" class="btn ghost sm" style="padding:6px 8px;width:auto;min-width:240px;">'+
+    MGR.slice().sort().map(function(mg){
+      return (RBM[mg]||[]).slice().sort().map(function(r){return '<option value="'+r+'">'+r+' ('+mg+')</option>';}).join('');
+    }).join('')+
+    '</select>'+
+    '<span class="hint" style="margin:0;">exits starting week</span>'+
+    '<select id="exitWkSel" class="btn ghost sm" style="padding:6px 8px;width:auto;">'+
+    Array.from({length:TOTAL_WEEKS},function(_,i){return '<option value="'+(i+1)+'">'+(i+1)+'</option>';}).join('')+
+    '</select>'+
+    '<button class="btn" id="exitAddBtn" style="padding:6px 14px;">Add</button>'+
+    '</div>'+
+    '<div id="exitList"></div>'+
+    '</div>'+
     '<div class="card"><div style="overflow-x:auto;">'+
     '<table><thead>'+
     '<tr><td class="team"></td>'+
@@ -498,6 +540,46 @@ async function rAdmin(){
       }
     })(ww);
   }
+
+  // Rep -> manager lookup for display
+  var repMgr={};
+  MGR.forEach(function(mg){(RBM[mg]||[]).forEach(function(r){repMgr[r]=mg;});});
+
+  function renderExits(){
+    var el=document.getElementById('exitList');
+    if(!el)return;
+    var entries=Object.keys(state.exits).sort();
+    el.innerHTML=entries.length===0
+      ?'<div class="hint">No reps currently set to exit.</div>'
+      :'<div class="pills">'+entries.map(function(r){
+        return '<span class="pill" style="background:var(--panel2);color:var(--text);display:inline-flex;align-items:center;gap:7px;">'+
+          r+' ('+(repMgr[r]||'?')+') &middot; exits WK'+state.exits[r]+
+          '<button data-exit-rm="'+r+'" style="background:none;border:none;color:var(--bad);cursor:pointer;font-weight:700;padding:0;font-size:13px;">&times;</button>'+
+          '</span>';
+      }).join('')+'</div>';
+    el.querySelectorAll('[data-exit-rm]').forEach(function(btn){
+      btn.onclick=async function(){
+        var rep=btn.dataset.exitRm;
+        if(!confirm('Remove exit for '+rep+'? They will become selectable again for all weeks.'))return;
+        btn.disabled=true;
+        var ok=await removeExit(rep);
+        if(ok){state.cache={};renderExits();}
+      };
+    });
+  }
+  renderExits();
+
+  var exitAddBtn=document.getElementById('exitAddBtn');
+  if(exitAddBtn)exitAddBtn.onclick=async function(){
+    var repSel=document.getElementById('exitRepSel'),wkSel=document.getElementById('exitWkSel');
+    var rep=repSel.value,wk=parseInt(wkSel.value,10);
+    if(!rep)return;
+    exitAddBtn.disabled=true;exitAddBtn.textContent='...';
+    var ok=await setExit(rep,wk);
+    exitAddBtn.disabled=false;exitAddBtn.textContent='Add';
+    if(ok){state.cache={};renderExits();}
+    else alert('Failed to save exit. Please try again.');
+  };
 
   var pendingPerWeek={};
   for(var w=1;w<=TOTAL_WEEKS;w++)pendingPerWeek[w]=[];
@@ -550,7 +632,7 @@ async function rAdmin(){
     for(var mi=0;mi<MGR.length;mi++){
       var mg=MGR[mi],fullRoster=(RBM[mg]||[]).slice().sort();
       for(var w=1;w<=TOTAL_WEEKS;w++){
-        var all=fullRoster.filter(function(r){return !(EXIT[r]&&w>=EXIT[r]);});
+        var all=fullRoster.filter(function(r){return !(state.exits[r]&&w>=state.exits[r]);});
         var rc=state.cache[mg+':'+w],sel=new Set(rc?rc.reps:[]);
         for(var ri=0;ri<all.length;ri++)csv+=all[ri]+','+mg+','+w+','+(sel.has(all[ri])?'TRUE':'FALSE')+'\n';
       }
